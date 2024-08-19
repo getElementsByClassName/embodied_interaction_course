@@ -605,18 +605,13 @@ var _crosshairSpriteJs = require("./CrosshairSprite.js");
 var _crosshairSpriteJsDefault = parcelHelpers.interopDefault(_crosshairSpriteJs);
 var _explosionSpriteJs = require("./ExplosionSprite.js");
 var _explosionSpriteJsDefault = parcelHelpers.interopDefault(_explosionSpriteJs);
-const demosSection = document.getElementById("demos");
 let poseLandmarker = undefined;
-let runningMode = "IMAGE";
 let enableWebcamButton;
-let webcamRunning = false;
-const videoHeight = "0px";
-const videoWidth = "0px";
-// Before we can use PoseLandmarker class we must wait for it to finish
-// loading. Machine Learning models can be large and take a moment to
-// get everything needed to run.
-async function createPoseLandmarker() {
+let webcamRunning = true;
+//load wasm to run ML Model, and then load Model
+async function fnCreatePoseLandmarker() {
     const vision = await (0, _tasksVision.FilesetResolver).forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
+    //pose landmarker and options
     poseLandmarker = await (0, _tasksVision.PoseLandmarker).createFromOptions(vision, {
         baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task`,
@@ -624,87 +619,117 @@ async function createPoseLandmarker() {
         },
         runningMode: "VIDEO",
         numPoses: 1,
-        minTrackingConfidence: 0.85
+        minTrackingConfidence: 0.90
     });
 }
-createPoseLandmarker();
-/********************************************************************
-// Demo 2: Continuously grab image from webcam stream and detect it.
-********************************************************************/ const video = document.getElementById("webcam");
-//const canvasElement = document.getElementById("output_canvas");
-//const canvasCtx = canvasElement.getContext("2d");
-//const drawingUtils = new DrawingUtils(canvasCtx);
+fnCreatePoseLandmarker();
+//initialize webcam
+const video = document.getElementById("webcam");
+enableWebcamButton = document.getElementById("webcamButton");
+enableWebcamButton.addEventListener("click", fnEnableCam);
+function fnEnableCam() {
+    let mediaDevices = navigator.mediaDevices;
+    //mediaDevices.getUserMedia({ video: true });
+    const constraints = {
+        video: true
+    };
+    webcamRunning = true;
+    mediaDevices.getUserMedia(constraints).then((stream)=>{
+        video.srcObject = stream;
+        video.addEventListener("loadeddata", fnPredictWebcam);
+    });
+}
+function fnToggleWindows() {
+    const webcam = document.getElementById("wdw-webcam");
+    const game = document.getElementById("wdw-game");
+    webcam.style.display = "none";
+    game.style.display = "flex";
+}
+//fnEnableCam();
 // Check if webcam access is supported.
-const hasGetUserMedia = ()=>{
-    var _a;
-    return !!((_a = navigator.mediaDevices) === null || _a === void 0 ? void 0 : _a.getUserMedia);
-};
+//const hasGetUserMedia = () => { var _a; return !!((_a = navigator.mediaDevices) === null || _a === void 0 ? void 0 : _a.getUserMedia); };
 // If webcam supported, add event listener to button for when user
 // wants to activate it.
+/*
 if (hasGetUserMedia()) {
+    fnEnableCam();
+    webcamRunning = true;
     enableWebcamButton = document.getElementById("webcamButton");
-    enableWebcamButton.addEventListener("click", enableCam);
-} else console.warn("getUserMedia() is not supported by your browser");
+    enableWebcamButton.addEventListener("click", fnEnableCam);
+}
+else {
+    console.warn("getUserMedia() is not supported by your browser");
+}
+*/ /*
 // Enable the live webcam view and start detection.
-function enableCam(event) {
+function fnEnableCam(event) {
     if (!poseLandmarker) {
         console.log("Wait! poseLandmaker not loaded yet.");
         return;
     }
+    /*
     if (webcamRunning === true) {
         webcamRunning = false;
-        enableWebcamButton.innerText = "ENABLE PREDICTIONS";
-    } else {
-        webcamRunning = true;
-        enableWebcamButton.innerText = "DISABLE PREDICTIONS";
+        enableWebcamButton.innerText = "Enabled webcam to test";
     }
-    // getUsermedia parameters.
-    const constraints = {
-        video: true
-    };
-    // Activate the webcam stream.
-    navigator.mediaDevices.getUserMedia(constraints).then((stream)=>{
+    else {
+        webcamRunning = true;
+        enableWebcamButton.innerText = "Stop Webcam";
+    }
+    */ // getUsermedia parameters.
+/*
+const constraints = {
+    video: true
+};
+*/ // Activate the webcam stream.
+/*
+    mediaDevices.getUserMedia(constraints).then((stream) => {
         video.srcObject = stream;
-        video.addEventListener("loadeddata", predictWebcam);
+        video.addEventListener("loadeddata", fnPredictWebcam);
     });
-}
+*/ //calibration of z-value
 let zCalibrationValue;
 let hasBeenCalibrated = false;
 const numOfCalibrationValues = 300;
 const arrCalibration = [];
 function fnCalibrateZValue(zValue, array) {
-    if (array.length < numOfCalibrationValues) array.push(zValue);
-    else {
+    if (array.length < numOfCalibrationValues) {
+        array.push(zValue);
+        console.log(zValue);
+    } else {
         zCalibrationValue = array.reduce((acc, cur)=>{
             return acc + cur;
         }) / numOfCalibrationValues;
+        //setTimeout(fnInitGame(), 2000);
+        fnInitGame();
+        setTimeout(fnToggleWindows(), 3000);
+        //fnToggleWindows();
         hasBeenCalibrated = true;
     }
 }
 let lastVideoTime = -1;
 let leftEar_X, leftEar_Y, rightEar_X, rightEar_Y, nose_X, nose_Y, nose_Z, right_index, left_index, delta_X, delta_Y, angle;
+const maxNormalizedValueVert = 0.3;
+const maxNormalizedValueYPos = 0.2;
+const maxNomalizedValueYNeg = 0.2;
 const arrAngles = [];
 const arrNoseX = [];
 const arrNoseY = [];
 const arrNoseZ = [];
 const period = 50;
+let gameHasStarted = false;
 let playerIsShooting = false;
+let scene, spaceship, starWarp, crosshair;
 let sumAngles, sumNoseX, sumNoseY, sumNoseZ = 0;
 const maxWidth = (0, _utilsJsDefault.default).fnCalculateVisibleSize().maxX;
 const maxHeight = (0, _utilsJsDefault.default).fnCalculateVisibleSize().maxY;
-console.log(maxWidth, maxHeight);
-async function predictWebcam() {
-    //canvasElement.style.height = videoHeight;
-    //video.style.height = videoHeight;
-    //canvasElement.style.width = videoWidth;
-    //video.style.width = videoWidth;
-    // Now let's start detecting the stream.
+//console.log(maxWidth, maxHeight);
+async function fnPredictWebcam() {
     let startTimeMs = performance.now();
     if (lastVideoTime !== video.currentTime) {
         lastVideoTime = video.currentTime;
         try {
             poseLandmarker.detectForVideo(video, startTimeMs, (result)=>{
-                //canvasCtx.save();
                 //values for rotation
                 /*
                 leftEar_X = result.landmarks[0][7].x;
@@ -732,14 +757,16 @@ async function predictWebcam() {
                 }
                 */ //console.log(result.landmarks[0][0].z);
                 //console.log(playerIsShooting);
-                if (!hasBeenCalibrated) fnCalibrateZValue(result.landmarks[0][0].z, arrCalibration);
+                //stats.begin();
+                if (!hasBeenCalibrated) //console.log("this runs");
+                fnCalibrateZValue(result.landmarks[0][0].z, arrCalibration);
                 if (hasBeenCalibrated) {
                     nose_Z = result.landmarks[0][0].z;
                     nose_Z = (0, _utilsJsDefault.default).fnMovingAverage(arrNoseZ, period, sumNoseZ, nose_Z);
-                    if (nose_Z <= zCalibrationValue * 1.15) playerIsShooting = true;
+                    //console.log(zCalibrationValue);
+                    if (nose_Z <= zCalibrationValue * 1.20) playerIsShooting = true;
                     else playerIsShooting = false;
                 }
-                //console.log(zCalibrationValue);
                 nose_X = result.landmarks[0][0].x;
                 if (nose_X > 0.80) nose_X = 0.80;
                 if (nose_X < 0.20) nose_X = 0.20;
@@ -750,29 +777,28 @@ async function predictWebcam() {
                 if (nose_Y > 0.70) nose_Y = 0.70;
                 if (nose_Y < 0.30) nose_Y = 0.30;
                 nose_Y = (0, _utilsJsDefault.default).fnMovingAverage(arrNoseY, period, sumNoseY, nose_Y);
-                nose_Y = (0, _utilsJsDefault.default).fnRemap(nose_Y, 0.70, 0.30, -maxHeight, maxWidth);
+                nose_Y = (0, _utilsJsDefault.default).fnRemap(nose_Y, 0.70, 0.30, -maxHeight, maxHeight);
             });
         } catch (error) {
-            //set nose_X equal to noseX?
             console.error("An error occurred during setup:", error);
         }
     }
     // Call this function again to keep predicting when the browser is ready.
-    if (webcamRunning === true) window.requestAnimationFrame(predictWebcam);
+    if (webcamRunning) scene._renderer.setAnimationLoop(Animate);
 }
 /********************************************************************
-// Constants
+// Game Constants
 ********************************************************************/ //bullets
 const MAX_SHOOTING_DISTANCE = -150;
 const BULLET_SPEED = 0.25;
 //enemies
-const ENEMY_SPEED = 0.1;
+const ENEMY_SPEED = 0.05;
 const ENEMY_SPAWN_RATE = 2000; //enemy spawn rate in milliseconds
 const ENEMY_BOUNDING_BOX_SCALAR = 0.001; //How much should the enemy bounding box be expanded 
 //health
 const BULLET_FIRE_RATE = 200;
-const HEALTH_PACK_SPEED = 0.25;
-const HEALTH_PACK_SPAWN_RATE = 4000;
+const HEALTH_PACK_SPEED = 0.2;
+const HEALTH_PACK_SPAWN_RATE = 4000; //miliseconds
 const arrBullets = []; // Array to hold all active bullets
 const arrEnemies = []; // Array of active enemies
 const arrHealthPacks = []; // Array of active healthpacks
@@ -781,22 +807,29 @@ const arrSpriteSheets = []; //Array holds spritesheets which should updated/anim
 const stats = (0, _statsModuleDefault.default)();
 stats.showPanel(0);
 document.body.appendChild(stats.dom);
-//init a new scene
-const scene = new (0, _sceneJsDefault.default)({
+scene = new (0, _sceneJsDefault.default)({
     sceneWidth: window.innerWidth,
     sceneHeight: window.innerHeight
 });
-//init new spacewarp effect
-const starWarp = new (0, _starWarpJsDefault.default)({
-    LINE_COUNT: 5
-}, scene);
-//init new spaceship
-const spaceship = new (0, _spaceshipJsDefault.default)(scene);
-//init crosshair
-const crosshair = new (0, _crosshairSpriteJsDefault.default)(scene);
-fnSpawnEnemies(ENEMY_SPAWN_RATE);
-fnSpawnHealthPacks(HEALTH_PACK_SPAWN_RATE);
-fnFireBullets(BULLET_FIRE_RATE);
+function fnInitGame() {
+    //init a new scene
+    if (!gameHasStarted) {
+        //scene = new Scene({ sceneWidth: window.innerWidth, sceneHeight: window.innerHeight });
+        //init new spacewarp effect
+        starWarp = new (0, _starWarpJsDefault.default)({
+            LINE_COUNT: 5
+        }, scene);
+        //init new spaceship
+        spaceship = new (0, _spaceshipJsDefault.default)(scene);
+        //init crosshair
+        crosshair = new (0, _crosshairSpriteJsDefault.default)(scene);
+        fnSpawnEnemies(ENEMY_SPAWN_RATE);
+        fnSpawnHealthPacks(HEALTH_PACK_SPAWN_RATE);
+        fnFireBullets(BULLET_FIRE_RATE);
+    }
+    gameHasStarted = true;
+}
+gameHasStarted;
 function fnSpawnEnemies(spawnRate) {
     // Create enemies at random positions
     setInterval(function() {
@@ -816,7 +849,7 @@ function fnFireBullets(fireRate) {
     //if (playerIsShooting) {
     setInterval(function() {
         if (spaceship && playerIsShooting) {
-            const bullet = spaceship.shoot(scene, spaceship.getPosition());
+            const bullet = spaceship.fnShoot(scene, spaceship.fnGetPosition());
             arrBullets.push(bullet);
         }
     }, fireRate);
@@ -831,19 +864,19 @@ function fnCheckEnemyBulletCollisions() {
             //for each enemy in array
             arrEnemies.forEach((enemy, enemyIndex)=>{
                 //const enemyBox = new THREE.Box3().setFromObject(enemy.model.children[0]); //bounding box
-                const enemyBox = enemy.getBoundingBox();
+                const enemyBox = enemy.fnGetBoundingBox();
                 // Expand the bounding box by a scalar value 
                 enemyBox.expandByScalar(ENEMY_BOUNDING_BOX_SCALAR);
                 //console.log(enemyBox);
                 if (bulletBox.intersectsBox(enemyBox)) {
                     // Collision detected
-                    const spriteExplosionPosition = enemy.getPosition();
+                    const spriteExplosionPosition = enemy.fnGetPosition();
                     //create spritesheet
                     const explosionSprite = new (0, _explosionSpriteJsDefault.default)(scene, spriteExplosionPosition);
                     //push spritesheet
                     arrSpriteSheets.push(explosionSprite);
-                    bullet.remove();
-                    enemy.remove();
+                    bullet.fnRemove();
+                    enemy.fnRemove();
                     arrBullets.splice(bulletIndex, 1);
                     arrEnemies.splice(enemyIndex, 1);
                 }
@@ -855,10 +888,10 @@ function fnCheckEnemyBulletCollisions() {
 function fnCheckEnemySpaceshipCollisions() {
     if (spaceship.isModelLoaded) {
         //const spaceshipBox = new THREE.Box3().setFromObject(spaceship.mesh);
-        const spaceshipBox = spaceship.getBoundingBox();
+        const spaceshipBox = spaceship.fnGetBoundingBox();
         //console.log(spaceshipBox);
         arrEnemies.forEach((enemy, enemyIndex)=>{
-            const enemyBox = enemy.getBoundingBox();
+            const enemyBox = enemy.fnGetBoundingBox();
             //console.log(enemyBox);
             enemyBox.intersectsBox(spaceshipBox);
         });
@@ -867,19 +900,19 @@ function fnCheckEnemySpaceshipCollisions() {
 //collision detection - spaceship against health packs
 function fnCheckHealthSpaceshipCollisions() {
     if (spaceship.isModelLoaded) {
-        const spaceshipBox = spaceship.getBoundingBox();
+        const spaceshipBox = spaceship.fnGetBoundingBox();
         arrHealthPacks.forEach((healthpack, healthpackIndex)=>{
-            const healthpackBox = healthpack.getBoundingBox();
+            const healthpackBox = healthpack.fnGetBoundingBox();
             if (healthpackBox.intersectsBox(spaceshipBox)) {
                 // Collision detected
                 //console.log('Spaceship collects healthpack');
-                healthpack.remove();
+                healthpack.fnRemove();
                 arrHealthPacks.splice(healthpackIndex, 1);
             }
         });
     }
 }
-function rotateCamera(camera, nose_X, nose_Y) {
+function fnRotateCamera(camera, nose_X, nose_Y) {
     const clampedValueX = Math.max(-10, Math.min(10, nose_X));
     const clampedValueY = Math.max(-5, Math.min(5, nose_Y));
     const rotationAngleInDegreesX = clampedValueX;
@@ -892,19 +925,19 @@ function rotateCamera(camera, nose_X, nose_Y) {
 function fnUpdateModelPosition(array, meshSpeed, condition) {
     //for each item in pass array
     array.forEach((currentMesh, index)=>{
-        currentMesh.update(meshSpeed); //run update method
+        currentMesh.fnUpdate(meshSpeed); //run update method
         //console.log(currentMesh);
         //currentMesh.boundingBox.applyMatrix4(currentMesh.matrixWorld);
         //console.log(currentMesh);
         //if condition to check is negative
         if (Math.sign(condition) === -1) {
-            if (currentMesh.getPositionZ() < condition) {
+            if (currentMesh.fnGetPositionZ() < condition) {
                 //console.log('here');
-                currentMesh.remove();
+                currentMesh.fnRemove();
                 array.splice(index, 1);
             }
-        } else if (currentMesh.getPositionZ() > 10) {
-            currentMesh.remove();
+        } else if (currentMesh.fnGetPositionZ() > 10) {
+            currentMesh.fnRemove();
             array.splice(index, 1);
         }
     });
@@ -913,36 +946,50 @@ function fnUpdateMeshPosition(array, meshSpeed, condition) {
     //for each item in pass array
     array.forEach((currentMesh, index)=>{
         if (currentMesh !== undefined) {
-            currentMesh.update(meshSpeed); //run update method
+            currentMesh.fnUpdate(meshSpeed); //run update method
             //if condition to check is negative
             if (Math.sign(condition) === -1) {
                 if (currentMesh.mesh.position.z < condition) {
-                    currentMesh.remove();
+                    currentMesh.fnRemove();
                     array.splice(index, 1);
                 }
             } else if (currentMesh.mesh.position.z > 10) {
-                currentMesh.remove();
+                currentMesh.fnRemove();
                 array.splice(index, 1);
             }
         }
     });
 }
 function Animate() {
-    fnUpdateMeshPosition(arrBullets, BULLET_SPEED, MAX_SHOOTING_DISTANCE);
-    fnUpdateModelPosition(arrEnemies, ENEMY_SPEED);
-    fnUpdateModelPosition(arrHealthPacks, HEALTH_PACK_SPEED);
-    const deltaTime = scene._renderer.info.render.frame; // Get the time difference between frames
-    //console.log(arrSpriteSheets);
-    arrSpriteSheets.forEach((animation, index)=>{
-        animation.update(deltaTime, arrSpriteSheets, index, scene);
-    //console.log(arrSpriteSheets);
-    });
-    fnCheckEnemyBulletCollisions();
-    fnCheckEnemySpaceshipCollisions();
-    fnCheckHealthSpaceshipCollisions();
-    starWarp.AnimateStarWarp({
-        LINE_COUNT: 5
-    });
+    fnPredictWebcam();
+    if (gameHasStarted) {
+        //update spaceship position based on remapped Nose landmark values
+        //console.log(spaceship);
+        if (nose_X && nose_Y && spaceship.isModelLoaded) {
+            spaceship.model.position.set(nose_X, nose_Y, 0);
+            spaceship.fnComputeBoundingBox();
+            crosshair.fnSetPosition(nose_X, nose_Y);
+            //rotate camera 
+            fnRotateCamera(scene._camera, nose_X, nose_Y);
+        //scene._OrbitController.update();
+        }
+        fnUpdateMeshPosition(arrBullets, BULLET_SPEED, MAX_SHOOTING_DISTANCE);
+        fnUpdateModelPosition(arrEnemies, ENEMY_SPEED);
+        fnUpdateModelPosition(arrHealthPacks, HEALTH_PACK_SPEED);
+        // Get the time difference between frames
+        const deltaTime = scene._renderer.info.render.frame;
+        //update sprite explosions
+        arrSpriteSheets.forEach((animation, index)=>{
+            animation.fnUpdate(deltaTime, arrSpriteSheets, index, scene);
+        //console.log(arrSpriteSheets);
+        });
+        fnCheckEnemyBulletCollisions();
+        fnCheckEnemySpaceshipCollisions();
+        fnCheckHealthSpaceshipCollisions();
+        starWarp.AnimateStarWarp({
+            LINE_COUNT: 5
+        });
+    }
     //updateFrame(deltaTime); // Update the frame
     /*
     if (webcamRunning === true) {
@@ -951,19 +998,11 @@ function Animate() {
     */ //if (angle === undefined) box.rotation.set(0, 0, 0);
     //if (angle) box.rotation.set(0, 0, angle);
     // Function to rotate the camera
-    if (nose_X && nose_Y) {
-        spaceship.model.position.set(nose_X, nose_Y, 0);
-        spaceship.computeBoundingBox();
-        crosshair.setPosition(nose_X, nose_Y);
-        rotateCamera(scene._camera, nose_X, nose_Y);
-    //scene._OrbitController.update();
-    }
     //console.log("Angle in Animate", angle);
     scene.render();
     stats.update();
 //console.log(scene._renderer.info.render.triangles);
-}
-scene._renderer.setAnimationLoop(Animate);
+} //scene._renderer.setAnimationLoop(Animate);
 
 },{"@mediapipe/tasks-vision":"e5Mjq","three":"ktPTu","three/examples/jsm/libs/stats.module":"6xUSB","./Utils.js":"c7A1Q","./Scene.js":"jv7bR","./StarWarp.js":"kSphB","./Spaceship.js":"hxjAj","./Enemy.js":"lxN59","./Health.js":"6CmIZ","./CrosshairSprite.js":"eCJMj","./ExplosionSprite.js":"d2CKt","@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3"}],"e5Mjq":[function(require,module,exports) {
 var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
@@ -45848,30 +45887,7 @@ class Utils {
             maxY: visibleHeight
         };
     }
-} /*
-export default class Utils {
-
-    constructor() {
-        this.fnGetRandomBetween();
-        this.fnRemap();
-        //this.#geometry = new Geometry(this);
-        //this._light = new Light(this);
-        //this.#interactions = new Interactions(this);
-
-    }
-
-    //function to get random number between a min and max value
-    fnGetRandomBetween(min, max) {
-        return Math.random() * (max - min) + min;
-    }
-
-    fnRemap(value, x1, y1, x2, y2) {
-        return (value - x1) * (y2 - x2) / (y1 - x1) + x2;
-    }
-
-
 }
-    */ 
 exports.default = Utils;
 
 },{"@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3"}],"jv7bR":[function(require,module,exports) {
@@ -45888,12 +45904,8 @@ var _utilsJsDefault = parcelHelpers.interopDefault(_utilsJs);
 class Scene {
     #milkywayMap;
     constructor(params){
-        //this.#Initialize(params);
         this.#milkywayMap = (0, _milkywayJpgDefault.default);
         this.envMap;
-        //this.#geometry = new Geometry(this);
-        //this._light = new Light(this);
-        //this.#interactions = new Interactions(this);
         this._params = params;
         this._renderer = new _three.WebGLRenderer({
             antialias: false,
@@ -45904,12 +45916,14 @@ class Scene {
         this._renderer.setPixelRatio(window.devicePixelRatio);
         //this._renderer.shadowMap.enabled = true; //enable shadow calc
         //this._renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this._renderer.outputEncoding = _three.sRGBEncoding;
+        this._renderer.outputEncoding = _three.SRGBColorSpace;
         //this._renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this._renderer.toneMappingExposure = 0.3;
-        //set canvas size and append to body
+        //set canvas size and append to game div
         this._renderer.setSize(this._params.sceneWidth, this._params.sceneHeight);
-        document.body.appendChild(this._renderer.domElement);
+        this.gameDiv = document.getElementById("game");
+        this.gameDiv.appendChild(this._renderer.domElement);
+        //document.body.appendChild(this._renderer.domElement);
         this._scene = new _three.Scene();
         this._camera = new _three.PerspectiveCamera(75, this._params.sceneWidth / this._params.sceneHeight, 0.1, 1000);
         this._camera.position.set(0, 2, 8);
@@ -45941,13 +45955,7 @@ class Scene {
             frameBufferType: (0, _three.HalfFloatType)
         });
         this.composer.addPass(new (0, _postprocessing.RenderPass)(this._scene, this._camera));
-        this.composer.addPass(new (0, _postprocessing.EffectPass)(this._camera, new (0, _postprocessing.BloomEffect)({
-            intensity: 2,
-            radius: 0.1,
-            luminanceThreshold: 0.15,
-            luminanceSmoothing: 1,
-            blendFunction: _three.NormalBlending
-        })));
+        //this.composer.addPass(new EffectPass(this._camera, new BloomEffect({ intensity: 2, radius: 0.1, luminanceThreshold: 0.15, luminanceSmoothing: 1, blendFunction: THREE.NormalBlending })));
         this.composer.addPass(new (0, _postprocessing.EffectPass)(this._camera, new (0, _postprocessing.ToneMappingEffect)({
             mode: _three.ACESFilmicToneMapping
         })));
@@ -61397,21 +61405,15 @@ class Spaceship {
         this.scene = scene;
         this.isModelLoaded = false;
         this.boundingBox = new _three.Box3();
-        /*
-        this.geometry = new THREE.BoxGeometry(1, 1, 1);
-        this.material = new THREE.MeshBasicMaterial({ color: 0xFF0000 });
-        this.mesh = new THREE.Mesh(this.geometry, this.material);
-        this.mesh.position.set(0, 0, 0);
-        this.scene.scene.add(this.mesh);
-        */ this.loadModel("./assets/spaceship/scene.gltf").then((gltf)=>{
+        this.fnLoadModel("./assets/spaceship/scene.gltf").then((gltf)=>{
             this.model = gltf.scene; // Cache the loaded model
             //this.model = Health.modelTemplate.clone();
             //this.rotationSpeed = new THREE.Vector3(0.01, 0, 0); // Rotation speed around each axis
-            //this.model.children[0].children[0].children[0].children[0].children[0].material.emissiveIntensity = 10;
+            this.model.children[0].children[0].children[0].children[0].children[0].material.emissiveIntensity = 15;
             this.model.position.set(0, 0, 0);
             this.model.scale.set(0.2, 0.2, 0.2);
             this.model.rotation.y = Math.PI;
-            this.computeBoundingBox();
+            this.fnComputeBoundingBox();
             this.scene.scene.add(this.model);
             this.isModelLoaded = true;
         //console.log(this.model);
@@ -61419,21 +61421,21 @@ class Spaceship {
             console.error("An error occurred while loading the model:", error);
         });
     }
-    shoot(scene, position) {
+    fnShoot(scene, position) {
         if (this.model) {
-            const bullet = new (0, _bulletJsDefault.default)(scene, this.getPosition());
+            const bullet = new (0, _bulletJsDefault.default)(scene, this.fnGetPosition());
             return bullet;
         }
     }
     // Method to load the GLTF model
-    loadModel(modelPath) {
+    fnLoadModel(modelPath) {
         return new Promise((resolve, reject)=>{
             const loader = new (0, _gltfloader.GLTFLoader)();
             loader.load(modelPath, (gltf)=>resolve(gltf), undefined, (error)=>reject(error));
         });
     }
     // Method to compute the bounding box
-    computeBoundingBox() {
+    fnComputeBoundingBox() {
         if (this.model) {
             this.boundingBox = new _three.Box3(); // Create a Box3 instance
             this.boundingBox.setFromObject(this.model);
@@ -61443,11 +61445,11 @@ class Spaceship {
         } else console.warn("Model not instantiated yet. Cannot compute bounding box.");
     }
     // Method to get the bounding box
-    getBoundingBox() {
+    fnGetBoundingBox() {
         if (this.model) return this.boundingBox;
     }
     //return position
-    getPosition() {
+    fnGetPosition() {
         if (this.model) return this.model.position;
     }
 }
@@ -64590,10 +64592,10 @@ class Bullet {
         this.mesh.position.copy(position);
         this.scene.scene.add(this.mesh);
     }
-    update(speed) {
+    fnUpdate(speed) {
         this.mesh.position.z -= speed; // Move bullet forward
     }
-    remove() {
+    fnRemove() {
         this.scene.scene.remove(this.mesh);
     }
 }
@@ -64625,11 +64627,11 @@ class Enemy {
             this.rotationSpeed = new _three.Vector3((0, _utilsJsDefault.default).fnGetRandomBetween(0.007, 0.01), (0, _utilsJsDefault.default).fnGetRandomBetween(0.007, 0.01), (0, _utilsJsDefault.default).fnGetRandomBetween(0.007, 0.01)); // Rotation speed around each axis
             this.model.position.set(position.x, position.y, position.z);
             this.model.scale.set((0, _utilsJsDefault.default).fnGetRandomBetween(0.05, 0.1), (0, _utilsJsDefault.default).fnGetRandomBetween(0.05, 0.1), (0, _utilsJsDefault.default).fnGetRandomBetween(0.05, 0.1));
-            this.computeBoundingBox();
+            this.fnComputeBoundingBox();
             this.scene.scene.add(this.model);
         //console.log(this.model.children[0].children[0].children[0].children[0].children[0]);
         } else // Load the model if not already loaded
-        this.loadModel("./assets/asteroid/scene.gltf").then((gltf)=>{
+        this.fnLoadModel("./assets/asteroid/scene.gltf").then((gltf)=>{
             Enemy.modelTemplate = gltf.scene; // Cache the loaded model
             this.model = Enemy.modelTemplate.clone();
             this.rotationSpeed = new _three.Vector3((0, _utilsJsDefault.default).fnGetRandomBetween(0.007, 0.01), (0, _utilsJsDefault.default).fnGetRandomBetween(0.007, 0.01), (0, _utilsJsDefault.default).fnGetRandomBetween(0.007, 0.01)); // Rotation speed around each axis
@@ -64639,48 +64641,48 @@ class Enemy {
             //this.boundingBox.expandByScalar(0.08);
             this.model.position.set(position.x, position.y, position.z);
             this.model.scale.set((0, _utilsJsDefault.default).fnGetRandomBetween(0.05, 0.1), (0, _utilsJsDefault.default).fnGetRandomBetween(0.05, 0.1), (0, _utilsJsDefault.default).fnGetRandomBetween(0.05, 0.1));
-            this.setPosition(position.x, position.y, position.z);
+            this.fnSetPosition(position.x, position.y, position.z);
             this.scene.scene.add(this.model);
-            this.computeBoundingBox();
+            this.fnComputeBoundingBox();
         //console.log(this.model);
         }).catch((error)=>{
             console.error("An error occurred while loading the model:", error);
         });
     }
     // Method to load the GLTF model
-    loadModel(modelPath) {
+    fnLoadModel(modelPath) {
         return new Promise((resolve, reject)=>{
             const loader = new (0, _gltfloader.GLTFLoader)();
             loader.load(modelPath, (gltf)=>resolve(gltf), undefined, (error)=>reject(error));
         });
     }
     // Method to update the model's position
-    setPosition(x, y, z) {
+    fnSetPosition(x, y, z) {
         if (this.model) this.model.position.set(x, y, z);
         else console.warn("Model not instantiated yet. Cannot set position.");
     }
     //return z-value
-    getPositionZ() {
+    fnGetPositionZ() {
         if (this.model) return this.model.position.z;
     }
     //return position
-    getPosition() {
+    fnGetPosition() {
         if (this.model) return this.model.position;
     }
-    update(speed) {
+    fnUpdate(speed) {
         if (this.model) {
             this.model.position.z += speed; // Move enemy forward
             this.model.rotation.x += this.rotationSpeed.x;
             this.model.rotation.y += this.rotationSpeed.y;
             this.model.rotation.z += this.rotationSpeed.z;
-            this.computeBoundingBox();
+            this.fnComputeBoundingBox();
         }
     }
-    remove() {
+    fnRemove() {
         this.scene.scene.remove(this.model);
     }
     // Method to compute the bounding box
-    computeBoundingBox() {
+    fnComputeBoundingBox() {
         if (this.model) {
             this.boundingBox = new _three.Box3(); // Create a Box3 instance
             //this.boundingBox.setFromObject(this.model.children[0].children[0].children[0].children[0].children[0]);
@@ -64690,7 +64692,7 @@ class Enemy {
         } else console.warn("Model not instantiated yet. Cannot compute bounding box.");
     }
     // Method to get the bounding box
-    getBoundingBox() {
+    fnGetBoundingBox() {
         return this.boundingBox;
     }
 }
@@ -64727,15 +64729,15 @@ class Health {
             this.scene.scene.add(this.model);
         //console.log(this.model.children[0].children[0].children[0].children[0].children[0]);
         } else // Load the model if not already loaded
-        this.loadModel("./assets/health_pack/scene.gltf").then((gltf)=>{
+        this.fnLoadModel("./assets/health_pack/scene.gltf").then((gltf)=>{
             Health.modelTemplate = gltf.scene; // Cache the loaded model
             this.model = Health.modelTemplate.clone();
             //console.log(this.model.children[0].children[0].children[0].material);
-            this.model.children[0].children[0].children[0].material.emissiveIntensity = 20;
+            this.model.children[0].children[0].children[0].material.emissiveIntensity = 15;
             this.rotationSpeed = new _three.Vector3(0.01, 0, 0); // Rotation speed around each axis
             this.model.position.set(position.x, position.y, position.z);
             this.model.scale.set(0.05, 0.05, 0.05);
-            this.setPosition(position.x, position.y, position.z);
+            this.fnSetPosition(position.x, position.y, position.z);
             this.scene.scene.add(this.model);
         //this.computeBoundingBox();
         //console.log(this.model);
@@ -64744,39 +64746,39 @@ class Health {
         });
     }
     // Method to load the GLTF model
-    loadModel(modelPath) {
+    fnLoadModel(modelPath) {
         return new Promise((resolve, reject)=>{
             const loader = new (0, _gltfloader.GLTFLoader)();
             loader.load(modelPath, (gltf)=>resolve(gltf), undefined, (error)=>reject(error));
         });
     }
     // Method to update the model's position
-    setPosition(x, y, z) {
+    fnSetPosition(x, y, z) {
         if (this.model) this.model.position.set(x, y, z);
         else console.warn("Model not instantiated yet. Cannot set position.");
     }
     //return z-value
-    getPositionZ() {
+    fnGetPositionZ() {
         if (this.model) return this.model.position.z;
     }
     //return position
-    getPosition() {
+    fnGetPosition() {
         if (this.model) return this.model.position;
     }
-    update(speed) {
+    fnUpdate(speed) {
         if (this.model) {
             this.model.position.z += speed; // Move enemy forward
             this.model.rotation.x += this.rotationSpeed.x;
             this.model.rotation.y += this.rotationSpeed.y;
             this.model.rotation.z += this.rotationSpeed.z;
-            this.computeBoundingBox();
+            this.fnComputeBoundingBox();
         }
     }
-    remove() {
+    fnRemove() {
         this.scene.scene.remove(this.model);
     }
     // Method to compute the bounding box
-    computeBoundingBox() {
+    fnComputeBoundingBox() {
         if (this.model) {
             this.boundingBox = new _three.Box3(); // Create a Box3 instance
             this.boundingBox.setFromObject(this.model);
@@ -64785,31 +64787,10 @@ class Health {
         } else console.warn("Model not instantiated yet. Cannot compute bounding box.");
     }
     // Method to get the bounding box
-    getBoundingBox() {
+    fnGetBoundingBox() {
         return this.boundingBox;
     }
-} /*
-import * as THREE from 'three';
-
-export default class Health {
-    constructor(scene, position) {
-        this.scene = scene;
-        this.geometry = new THREE.SphereGeometry(1, 32, 32);
-        this.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        this.mesh = new THREE.Mesh(this.geometry, this.material);
-        this.mesh.position.copy(position);
-        this.scene.scene.add(this.mesh);
-    }
-
-    update(speed) {
-        this.mesh.position.z += speed; // Move health pack forward
-    }
-
-    remove() {
-        this.scene.scene.remove(this.mesh);
-    }
 }
-    */ 
 exports.default = Health;
 
 },{"three":"ktPTu","three/examples/jsm/loaders/GLTFLoader":"dVRsF","./Utils.js":"c7A1Q","@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3"}],"eCJMj":[function(require,module,exports) {
@@ -64838,28 +64819,11 @@ class CrosshairSprite {
         this.crosshairSpriteFar.position.set(0, 0, -25);
         scene._scene.add(this.crosshairSpriteFar);
     }
-    setPosition(nose_X, nose_Y) {
+    fnSetPosition(nose_X, nose_Y) {
         this.crosshairSpriteClose.position.set(nose_X, nose_Y, -15);
         this.crosshairSpriteFar.position.set(nose_X, nose_Y, -25);
     }
-} /*
-
-const crosshairMap = new THREE.TextureLoader().load(crosshair);
-const crosshairMat = new THREE.SpriteMaterial({ map: crosshairMap, transparent: true, color: 0xffffff });
-
-
-const crosshairSprite = new THREE.Sprite(crosshairMat);
-crosshairSprite.scale.set(1.5, 1.5, 1)
-crosshairSprite.position.set(0, 0, -15);
-scene._scene.add(crosshairSprite);
-
-const crosshairSpriteFar = new THREE.Sprite(crosshairMat);
-crosshairSpriteFar.scale.set(1, 1, 1)
-crosshairSpriteFar.position.set(0, 0, -25);
-scene._scene.add(crosshairSpriteFar);
-
-
-*/ 
+}
 exports.default = CrosshairSprite;
 
 },{"three":"ktPTu","../img/crosshair.png":"32JiX","@parcel/transformer-js/src/esmodule-helpers.js":"gkKU3"}],"32JiX":[function(require,module,exports) {
@@ -64907,7 +64871,7 @@ class ExplosionSprite {
         //add sprite
         scene._scene.add(this.sprite);
     }
-    update(deltaTime, array, index, scene) {
+    fnUpdate(deltaTime, array, index, scene) {
         if (Date.now() - this.lastFrameTime > this.frameInterval) {
             this.lastFrameTime = Date.now();
             this.currentFrame++;
@@ -64926,7 +64890,7 @@ class ExplosionSprite {
             this.texture.repeat.set(1 / this.numColumns, 1 / this.numRows);
         }
     }
-    remove(array, index) {
+    fnRemove(array, index) {
         //this.scene.scene.remove(this.sprite);
         this.sprite.remove();
         array.splice(index, 1);
